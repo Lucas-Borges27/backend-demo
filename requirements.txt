@@ -1,2 +1,6 @@
-fastapi==0.111.0
-uvicorn==0.30.0
+fastapi
+uvicorn[standard]
+httpx
+bcrypt
+python-dotenv
+pydantic
