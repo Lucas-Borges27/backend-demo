@@ -191,12 +191,17 @@ async def verify_jwt(req: JWTVerifyRequest):
 
     input_b64 = base64.b64encode(signing_input.encode()).decode()
 
+    print(f"[DEBUG] /transit/verify signing_input={signing_input[:80]}...")
+    print(f"[DEBUG] /transit/verify input_b64={input_b64[:80]}...")
+    print(f"[DEBUG] /transit/verify vault_sig={vault_sig}")
+
     verify_path = f"{VAULT_TRANSIT_MOUNT}/verify/{key_name}"
     verify_resp = await vault_post(verify_path, {
         "input":     input_b64,
         "signature": vault_sig,
     })
 
+    print(f"[DEBUG] Vault verify_resp={verify_resp}")
     valid = verify_resp.get("data", {}).get("valid", False)
 
     # decodifica payload para exibir

@@ -19,6 +19,7 @@ Variáveis de ambiente:
 """
 
 import os
+import base64
 import bcrypt
 import httpx
 from fastapi import APIRouter, HTTPException, Header
@@ -114,8 +115,25 @@ async def _sign_jwt(claims: dict) -> str:
     return resp.json()["jwt"]
 
 
+def _b64url_decode(s: str) -> bytes:
+    padding = 4 - len(s) % 4
+    return base64.urlsafe_b64decode(s + "=" * padding)
+
+
 async def _verify_jwt(token: str) -> dict:
     """Chama POST /transit/verify e retorna os claims. Lança 401 se inválido."""
+    parts = token.split(".")
+    if len(parts) == 3:
+        header_b64, payload_b64, sig_b64url = parts
+        signing_input = f"{header_b64}.{payload_b64}"
+        vault_sig_preview = f"vault:v1:{base64.b64encode(_b64url_decode(sig_b64url)).decode()}"
+        print(f"[DEBUG] _verify_jwt jwt={token[:50]}...")
+        print(f"[DEBUG] signing_input={signing_input[:80]}...")
+        print(f"[DEBUG] vault_sig (re-encoded)={vault_sig_preview}")
+    else:
+        print(f"[DEBUG] _verify_jwt JWT malformado: {len(parts)} partes — token={token[:50]}")
+
+    print(f"[DEBUG] chamando POST {SELF_BASE_URL}/transit/verify")
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(f"{SELF_BASE_URL}/transit/verify", json={"jwt": token})
@@ -123,6 +141,9 @@ async def _verify_jwt(token: str) -> dict:
         raise HTTPException(status_code=504, detail="Timeout ao verificar JWT via Transit Engine")
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Erro ao verificar JWT: {exc}")
+
+    print(f"[DEBUG] /transit/verify → status={resp.status_code} body={resp.text[:300]}")
+
     if resp.status_code != 200:
         raise HTTPException(status_code=401, detail="Token inválido")
     data = resp.json()
