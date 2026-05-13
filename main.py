@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from routers import auth_router, kv_router, kvm_router, transit_router, pki_router
+from routers import faturas_router, faturas_seed
 
 app = FastAPI(
     title="Vault Bridge API — Apigee X",
@@ -15,6 +16,10 @@ app.include_router(kv_router.router,      prefix="/kv",      tags=["KV — crede
 app.include_router(kvm_router.router,     prefix="/kvm",      tags=["KVM — rotação de API Keys"])
 app.include_router(transit_router.router, prefix="/transit",  tags=["Transit — JWT signing"])
 app.include_router(pki_router.router,     prefix="/pki",      tags=["PKI — mTLS certificates"])
+
+# ── cenário de demo — Faturas Telecom ────────────────────────────────────
+app.include_router(faturas_router.router, prefix="/faturas",  tags=["Demo — Faturas Telecom"])
+app.include_router(faturas_seed.router,   prefix="/faturas",  tags=["Demo — Seed"])
 
 
 @app.get("/health", tags=["Infra"])
