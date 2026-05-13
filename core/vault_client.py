@@ -1,150 +1,140 @@
 """
 core/vault_client.py
 ──────────────────────────────────────────────────────────────────────────────
-Cliente centralizado para o HashiCorp Vault.
-Todos os routers importam daqui — nenhum router faz AppRole login diretamente.
+Configuração mínima para o backend atuar como Resource Server passivo.
 
-Funcionalidades:
-  • get_vault_token()   — AppRole login, retorna client_token
-  • get_vault_headers() — headers prontos para qualquer chamada
-  • vault_get()         — GET genérico com tratamento de erros
-  • vault_post()        — POST genérico com tratamento de erros
-  • vault_put()         — PUT genérico com tratamento de erros
+Responsabilidades:
+  • Carregar a chave pública usada para verificar JWTs emitidos via Vault Transit
+  • Validar assinatura e claims básicas do JWT localmente
+  • Expor somente configuração necessária ao runtime FastAPI
+
+Não há mais login AppRole, chamadas ao Vault KV ou uso de Transit a partir deste backend.
+Toda a emissão e gestão do token fica no Apigee X.
 """
 
+from __future__ import annotations
+
+import base64
+import json
 import os
-import httpx
-from fastapi import HTTPException
-
-# ── configuração via env ───────────────────────────────────────────────────
-VAULT_ADDR      = os.getenv("VAULT_ADDR",      "https://do-not-delete-ever-v2-public-vault-cf6a1d76.5773df81.z1.hashicorp.cloud:8200")
-VAULT_NS        = os.getenv("VAULT_NAMESPACE", "admin/ibm")
-VAULT_MOUNT     = os.getenv("VAULT_MOUNT",     "secret")
-VAULT_ROLE_ID   = os.getenv("VAULT_ROLE_ID",   "")
-VAULT_SECRET_ID = os.getenv("VAULT_SECRET_ID", "")
-
-# mounts dedicados (podem ser sobrescritos por env)
-VAULT_TRANSIT_MOUNT = os.getenv("VAULT_TRANSIT_MOUNT", "transit")
-VAULT_PKI_MOUNT     = os.getenv("VAULT_PKI_MOUNT",     "pki")
+import time
+from typing import Any
 
 
-# ── autenticação ───────────────────────────────────────────────────────────
-async def get_vault_token() -> str:
-    """Faz login via AppRole e retorna o client_token."""
-    login_url = f"{VAULT_ADDR}/v1/auth/approle/login"
-    print(f"[vault] AppRole login → {login_url}", flush=True)
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                login_url,
-                headers={"X-Vault-Namespace": VAULT_NS, "Content-Type": "application/json"},
-                json={"role_id": VAULT_ROLE_ID, "secret_id": VAULT_SECRET_ID},
-            )
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Timeout ao autenticar no Vault (AppRole)")
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Erro ao autenticar no Vault: {exc}")
-
-    if resp.status_code == 403:
-        raise HTTPException(status_code=502, detail="Vault: AppRole negado (403) — verifique ROLE_ID/SECRET_ID")
-    if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Vault AppRole status inesperado: {resp.status_code}")
-
-    token = resp.json().get("auth", {}).get("client_token")
-    if not token:
-        raise HTTPException(status_code=502, detail="Vault: client_token ausente na resposta AppRole")
-
-    print(f"[vault] token obtido (prefixo: {token[:8]}...)", flush=True)
-    return token
+JWT_PUBLIC_KEY_PEM = os.getenv("JWT_PUBLIC_KEY_PEM", "")
+JWT_ISSUER = os.getenv("JWT_ISSUER", "apigee-vault-demo")
+JWT_AUDIENCE = os.getenv("JWT_AUDIENCE", "faturas-backend")
+JWT_SUBJECT_CLAIM = os.getenv("JWT_SUBJECT_CLAIM", "sub")
+JWT_NAME_CLAIM = os.getenv("JWT_NAME_CLAIM", "nome")
+JWT_LEEWAY_SECONDS = int(os.getenv("JWT_LEEWAY_SECONDS", "30"))
 
 
-async def get_vault_headers() -> dict:
-    """Retorna headers prontos: token + namespace + content-type."""
-    token = await get_vault_token()
+def get_resource_server_config() -> dict[str, Any]:
+    """Retorna a configuração necessária para validar JWT no backend."""
     return {
-        "X-Vault-Token":     token,
-        "X-Vault-Namespace": VAULT_NS,
-        "Content-Type":      "application/json",
+        "public_key_pem": JWT_PUBLIC_KEY_PEM.strip(),
+        "issuer": JWT_ISSUER,
+        "audience": JWT_AUDIENCE,
+        "subject_claim": JWT_SUBJECT_CLAIM,
+        "name_claim": JWT_NAME_CLAIM,
+        "leeway_seconds": JWT_LEEWAY_SECONDS,
     }
 
 
-# ── helpers HTTP genéricos ─────────────────────────────────────────────────
-async def vault_get(path: str) -> dict:
-    """
-    GET {VAULT_ADDR}/v1/{path}
-    Retorna resp.json() ou lança HTTPException.
-    """
-    url = f"{VAULT_ADDR}/v1/{path}"
-    print(f"[vault] GET {url}", flush=True)
+def _b64url_decode(data: str) -> bytes:
+    padding = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data + padding)
+
+
+def _load_public_key(public_key_pem: str):
+    if not public_key_pem:
+        raise ValueError("Chave pública JWT não configurada")
     try:
-        headers = await get_vault_headers()
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers=headers)
-    except HTTPException:
-        raise
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail=f"Timeout: GET {path}")
+        from cryptography.hazmat.primitives import serialization
+
+        return serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Erro: GET {path}: {exc}")
-
-    print(f"[vault] GET {path} → {resp.status_code}", flush=True)
-
-    if resp.status_code == 404:
-        raise HTTPException(status_code=404, detail=f"Segredo não encontrado: {path}")
-    if resp.status_code == 403:
-        raise HTTPException(status_code=502, detail=f"Vault: acesso negado a {path}")
-    if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Vault status inesperado {resp.status_code}: {path}")
-
-    return resp.json()
+        raise ValueError(f"Chave pública JWT inválida: {exc}") from exc
 
 
-async def vault_post(path: str, payload: dict) -> dict:
-    """
-    POST {VAULT_ADDR}/v1/{path}
-    Retorna resp.json() ou lança HTTPException.
-    """
-    url = f"{VAULT_ADDR}/v1/{path}"
-    print(f"[vault] POST {url}", flush=True)
+def _verify_signature(signing_input: bytes, signature: bytes, public_key) -> None:
     try:
-        headers = await get_vault_headers()
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-    except HTTPException:
-        raise
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail=f"Timeout: POST {path}")
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Erro: POST {path}: {exc}")
+        raise ValueError(f"Dependência criptográfica indisponível: {exc}") from exc
 
-    print(f"[vault] POST {path} → {resp.status_code}", flush=True)
+    if isinstance(public_key, rsa.RSAPublicKey):
+        public_key.verify(signature, signing_input, padding.PKCS1v15(), hashes.SHA256())
+        return
 
-    if resp.status_code == 403:
-        raise HTTPException(status_code=502, detail=f"Vault: acesso negado a {path}")
-    if resp.status_code not in (200, 201, 204):
-        raise HTTPException(status_code=502, detail=f"Vault status inesperado {resp.status_code}: {path}")
+    if isinstance(public_key, ec.EllipticCurvePublicKey):
+        public_key.verify(signature, signing_input, ec.ECDSA(hashes.SHA256()))
+        return
 
-    return resp.json() if resp.content else {}
+    raise ValueError("Tipo de chave pública não suportado para validação JWT")
 
 
-async def vault_put(path: str, payload: dict) -> dict:
-    """PUT genérico — usado para atualizar segredos KV."""
-    url = f"{VAULT_ADDR}/v1/{path}"
-    print(f"[vault] PUT {url}", flush=True)
+def verify_jwt(token: str, config: dict[str, Any]) -> dict[str, Any]:
+    """
+    Valida localmente um JWT assinado pelo Vault Transit.
+    Aceita somente JWS compacto com algoritmo RS256 ou ES256.
+    """
     try:
-        headers = await get_vault_headers()
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.put(url, headers=headers, json=payload)
-    except HTTPException:
-        raise
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail=f"Timeout: PUT {path}")
+        header_b64, payload_b64, signature_b64 = token.split(".")
+    except ValueError as exc:
+        raise ValueError("Token inválido") from exc
+
+    try:
+        header = json.loads(_b64url_decode(header_b64))
+        payload = json.loads(_b64url_decode(payload_b64))
+        signature = _b64url_decode(signature_b64)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Erro: PUT {path}: {exc}")
+        raise ValueError(f"Token malformado: {exc}") from exc
 
-    if resp.status_code == 403:
-        raise HTTPException(status_code=502, detail=f"Vault: acesso negado a {path}")
-    if resp.status_code not in (200, 204):
-        raise HTTPException(status_code=502, detail=f"Vault status inesperado {resp.status_code}: {path}")
+    alg = header.get("alg")
+    if alg not in {"RS256", "ES256"}:
+        raise ValueError("Algoritmo JWT não suportado")
 
-    return resp.json() if resp.content else {}
+    public_key = _load_public_key(config["public_key_pem"])
+    signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
+
+    try:
+        _verify_signature(signing_input, signature, public_key)
+    except Exception as exc:
+        raise ValueError(f"Assinatura JWT inválida: {exc}") from exc
+
+    now = int(time.time())
+    leeway = int(config.get("leeway_seconds", 0))
+
+    issuer = config.get("issuer")
+    if issuer and payload.get("iss") != issuer:
+        raise ValueError("Issuer inválido")
+
+    audience = config.get("audience")
+    aud_claim = payload.get("aud")
+    if audience:
+        if isinstance(aud_claim, list):
+            if audience not in aud_claim:
+                raise ValueError("Audience inválida")
+        elif aud_claim != audience:
+            raise ValueError("Audience inválida")
+
+    exp = payload.get("exp")
+    if exp is not None and now > int(exp) + leeway:
+        raise ValueError("Token expirado")
+
+    nbf = payload.get("nbf")
+    if nbf is not None and now + leeway < int(nbf):
+        raise ValueError("Token ainda não é válido")
+
+    iat = payload.get("iat")
+    if iat is not None and now + leeway < int(iat):
+        raise ValueError("Token com iat no futuro")
+
+    subject_claim = config.get("subject_claim", "sub")
+    subject_value = payload.get(subject_claim)
+    if not isinstance(subject_value, str) or not subject_value.strip():
+        raise ValueError(f"Claim obrigatória ausente: {subject_claim}")
+
+    return payload
