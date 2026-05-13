@@ -30,7 +30,8 @@ from core.vault_client import vault_get
 router = APIRouter()
 
 VAULT_KV_DEMO = os.getenv("VAULT_KV_DEMO",  "kvapigee-demo")
-SELF_BASE_URL = os.getenv("SELF_BASE_URL",   "SELF_BASE_URL=https://backend-demo-production-e92d.up.railway.app")
+SELF_BASE_URL = os.getenv("SELF_BASE_URL", "https://backend-demo-production-e92d.up.railway.app").rstrip("/")
+print(f"[DEBUG] SELF_BASE_URL={SELF_BASE_URL!r}")
 
 
 # ── mock de faturas por CPF ────────────────────────────────────────────────
