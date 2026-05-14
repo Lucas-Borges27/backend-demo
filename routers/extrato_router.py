@@ -1,10 +1,9 @@
 """
 routers/extrato_router.py
-Cenário d — Credenciais de Target Server via Vault KV
+Cenário d — Credenciais de Target Server via Vault Agent
 
-Endpoint:
-  GET /extrato/{cpf}   → retorna extrato de consumo do CPF
-                         exige Header: x-api-key: <valor>
+O Vault Agent mantém /vault/secrets/extrato-api-key atualizado.
+O backend lê desse arquivo — sem env var, sem hardcode.
 """
 
 import os
@@ -12,6 +11,8 @@ from fastapi import APIRouter, Header, HTTPException
 from typing import Annotated
 
 router = APIRouter()
+
+VAULT_SECRET_PATH = "/vault/secrets/extrato-api-key"
 
 _EXTRATO = {
     "111.111.111-11": {
@@ -45,14 +46,36 @@ _EXTRATO = {
 }
 
 
-@router.get("/{cpf}", summary="Extrato de consumo — protegido por x-api-key via Vault KV")
+def _get_api_key() -> str:
+    # Fallback para env var em desenvolvimento local
+    env_key = os.getenv("EXTRATO_API_KEY", "").strip()
+    if env_key:
+        return env_key
+
+    # Produção — lê do arquivo mantido pelo Vault Agent
+    try:
+        with open(VAULT_SECRET_PATH, "r") as f:
+            key = f.read().strip()
+            if key:
+                return key
+    except FileNotFoundError:
+        pass
+
+    return ""
+
+
+@router.get("/{cpf}", summary="Extrato de consumo — protegido por x-api-key via Vault Agent")
 async def get_extrato(
     cpf: str,
     x_api_key: Annotated[str | None, Header(alias="x-api-key")] = None,
 ):
-    expected_key = os.getenv("EXTRATO_API_KEY", "")
+    expected_key = _get_api_key()
+
     if not expected_key:
-        raise HTTPException(status_code=503, detail="EXTRATO_API_KEY não configurada no servidor")
+        raise HTTPException(
+            status_code=503,
+            detail="Serviço indisponível — key não disponível via Vault Agent",
+        )
 
     if not x_api_key or x_api_key != expected_key:
         raise HTTPException(
@@ -70,8 +93,9 @@ async def get_extrato(
         "cpf": cpf,
         **extrato,
         "_meta": {
-            "auth_method": "x-api-key via Vault KV",
-            "key_source": "Vault KV: kvapigee-demo/extrato-api-key",
+            "auth_method": "x-api-key via Vault Agent",
+            "key_source": VAULT_SECRET_PATH,
             "hardcoded_in_apigee": False,
+            "hardcoded_in_backend": False,
         },
     }
