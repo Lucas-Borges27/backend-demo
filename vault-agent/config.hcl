@@ -1,0 +1,30 @@
+vault {
+  address = "https://do-not-delete-ever-v2-public-vault-cf6a1d76.5773df81.z1.hashicorp.cloud:8200"
+  namespace = "admin/ibm"
+}
+
+auto_auth {
+  method "approle" {
+    config = {
+      role_id_file_path   = "/vault/config/role-id"
+      secret_id_file_path = "/vault/config/secret-id"
+      remove_secret_id_file_after_reading = false
+    }
+  }
+
+  sink "file" {
+    config = {
+      path = "/vault/token"
+    }
+  }
+}
+
+template {
+  source      = "/vault/templates/extrato-api-key.tpl"
+  destination = "/vault/secrets/extrato-api-key"
+  perms       = "0644"
+}
+
+# Vault Agent fica rodando e renova o token automaticamente
+exit_after_auth = false
+pid_file        = "/vault/agent.pid"
