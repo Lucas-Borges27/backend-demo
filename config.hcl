@@ -19,12 +19,19 @@ auto_auth {
   }
 }
 
+template_config {
+  static_secret_render_interval = "10s"
+}
+
 template {
   source      = "/vault/templates/extrato-api-key.tpl"
   destination = "/vault/secrets/extrato-api-key"
   perms       = "0644"
+  wait {
+    min = "1s"
+    max = "5s"
+  }
 }
 
-# Vault Agent fica rodando e renova o token automaticamente
 exit_after_auth = false
 pid_file        = "/vault/agent.pid"
