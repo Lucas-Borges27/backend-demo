@@ -32,6 +32,7 @@ import os
 from datetime import datetime, timezone
 
 from cryptography import x509
+from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
 from cryptography.x509 import NameOID
 from fastapi import APIRouter, Header, HTTPException
 from typing import Annotated
@@ -147,6 +148,7 @@ def _validate_client_cert(cert_pem: str) -> dict:
         ca_cert.public_key().verify(
             client_cert.signature,
             client_cert.tbs_certificate_bytes,
+            asym_padding.PKCS1v15(),
             client_cert.signature_hash_algorithm,
         )
     except Exception:
@@ -205,9 +207,9 @@ async def get_portabilidade(
         "cpf": cpf,
         **portabilidade,
         "_meta": {
-            "auth_method":          "mTLS — Vault PKI como CA interno",
-            "ca_source":            VAULT_CA_CERT_PATH,
-            "client_cert":          cert_info,
+            "auth_method":           "mTLS — Vault PKI como CA interno",
+            "ca_source":             VAULT_CA_CERT_PATH,
+            "client_cert":           cert_info,
             "hardcoded_credentials": False,
         },
     }

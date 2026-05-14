@@ -1,3 +1,3 @@
-{{- with secret "pki/cert/ca" -}}
+{{- with secret "pki/issuer/apigee-ca" -}}
 {{ .Data.certificate }}
 {{- end }}
