@@ -31,6 +31,7 @@ echo "$SECRET_ID" > /vault/config/secret-id
 echo "Credenciais carregadas."
 
 cp /app/vault-agent/extrato-api-key.tpl /vault/templates/
+cp /app/vault-agent/ca-cert.tpl         /vault/templates/
 cp /app/vault-agent/config.hcl          /vault/config/
 
 echo "Iniciando Vault Agent..."
@@ -39,15 +40,16 @@ vault agent -config=/vault/config/config.hcl &
 echo "Aguardando Vault Agent renderizar secrets..."
 TIMEOUT=30
 ELAPSED=0
-until [ -f /vault/secrets/extrato-api-key ] && [ -s /vault/secrets/extrato-api-key ]; do
+until [ -f /vault/secrets/extrato-api-key ] && [ -s /vault/secrets/extrato-api-key ] && \
+      [ -f /vault/secrets/ca.crt ]          && [ -s /vault/secrets/ca.crt ]; do
   sleep 1
   ELAPSED=$((ELAPSED + 1))
   if [ $ELAPSED -ge $TIMEOUT ]; then
-    echo "ERRO: Vault Agent não renderizou o secret em ${TIMEOUT}s"
+    echo "ERRO: Vault Agent não renderizou os secrets em ${TIMEOUT}s"
     exit 1
   fi
 done
 
-echo "Secret disponível."
+echo "Secrets disponíveis."
 echo "Iniciando backend FastAPI..."
 exec uvicorn main:app --host 0.0.0.0 --port 8080
