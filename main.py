@@ -66,10 +66,11 @@ def health():
 
 @app.get("/debug/extrato-key", tags=["Infra"])
 def debug_extrato_key():
+    import time
     from routers.extrato_router import _key_cache
     key = _key_cache.get("key") or ""
     return {
         "key_prefix": key[:8] if key else None,
-        "key_age_seconds": int(time.monotonic() - _key_cache["fetched_at"]),
+        "key_age_seconds": int(time.monotonic() - _key_cache.get("fetched_at", 0)),
     }
 
