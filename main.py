@@ -64,4 +64,12 @@ app.include_router(portabilidade_router.router,  prefix="/portabilidade",  tags=
 def health():
     return {"status": "ok"}
 
+@app.get("/debug/extrato-key", tags=["Infra"])
+def debug_extrato_key():
+    from routers.extrato_router import _key_cache
+    key = _key_cache.get("key") or ""
+    return {
+        "key_prefix": key[:8] if key else None,
+        "key_age_seconds": int(time.monotonic() - _key_cache["fetched_at"]),
+    }
 
