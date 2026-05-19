@@ -1,4 +1,3 @@
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -28,7 +27,7 @@ app = FastAPI(
 
 @app.middleware("http")
 async def jwt_validation_middleware(request: Request, call_next):
-    if request.url.path in {"/health", "/debug"} or request.url.path.startswith("/docs") or request.url.path.startswith("/openapi"):
+    if request.url.path == "/health" or request.url.path.startswith("/docs") or request.url.path.startswith("/openapi"):
         return await call_next(request)
 
     if request.url.path.startswith("/faturas"):
@@ -66,17 +65,3 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/debug", tags=["Infra"])
-def debug():
-    config = get_resource_server_config()
-    public_key = config["public_key_pem"]
-    return {
-        "JWT_ISSUER":            config["issuer"],
-        "JWT_AUDIENCE":          config["audience"],
-        "JWT_SUBJECT_CLAIM":     config["subject_claim"],
-        "JWT_NAME_CLAIM":        config["name_claim"],
-        "PUBLIC_KEY_SET":        bool(public_key),
-        "PUBLIC_KEY_FINGERPRINT": public_key[:32] if public_key else "",
-        "EXTRATO_API_KEY_SET":   bool(os.getenv("EXTRATO_API_KEY", "")),
-        "ENV":                   os.getenv("RAILWAY_ENVIRONMENT", "local"),
-    }

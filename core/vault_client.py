@@ -7,9 +7,6 @@ Responsabilidades:
   • Carregar a chave pública usada para verificar JWTs emitidos via Vault Transit
   • Validar assinatura e claims básicas do JWT localmente
   • Expor somente configuração necessária ao runtime FastAPI
-
-Não há mais login AppRole, chamadas ao Vault KV ou uso de Transit a partir deste backend.
-Toda a emissão e gestão do token fica no Apigee X.
 """
 
 from __future__ import annotations

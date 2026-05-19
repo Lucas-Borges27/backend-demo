@@ -1,19 +1,17 @@
 """
 routers/extrato_router.py
 ──────────────────────────────────────────────────────────────────────────────
-CENÁRIO d — Credenciais de Target Server via Vault (sem Agent)
+CENÁRIO d — Credenciais de Target Server via Vault
 
-Variação sem Vault Agent:
-  O Cloud Run autentica no Vault via JWT do metadata server GCP
-  (sem SA key estática) e mantém a API key em cache em memória com TTL.
-  Se a key for rejeitada, invalida o cache e busca novamente antes de
-  retornar erro — garante funcionamento após rotação da key no Vault.
-  Nada em disco, nenhum Agent, nenhuma credencial estática.
+O Cloud Run autentica no Vault via JWT do metadata server GCP (sem SA key
+estática) e mantém a API key em cache em memória com TTL. Se a key for
+rejeitada, invalida o cache e busca novamente — garante funcionamento após
+rotação da key no Vault.
 
-  Fluxo:
-    GET metadata server (audience=https://vault.hashicorp.com) → oidc_token
-    POST /v1/auth/jwt/login {role, jwt} → client_token
-    GET /v1/kvapigee-demo/data/extrato-api-key → api_key
+Fluxo:
+  GET metadata server (audience=https://vault.hashicorp.com) → oidc_token
+  POST /v1/auth/jwt/login {role, jwt} → client_token
+  GET /v1/kvapigee-demo/data/extrato-api-key → api_key
 
 Variáveis de ambiente:
   EXTRATO_API_KEY         → fallback dev local

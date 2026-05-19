@@ -3,16 +3,14 @@ routers/portabilidade_router.py
 ──────────────────────────────────────────────────────────────────────────────
 CENÁRIO b — mTLS entre Apigee e Backend (PKI Engine)
 
-Variação sem Vault Agent:
-  O CA cert é obtido diretamente do endpoint público do Vault PKI e mantido
-  em cache em memória com TTL (MTLS_CA_TTL_SECONDS, default 3600).
-  Se uma validação falhar, o cache é invalidado e o CA é renovado antes de
-  retornar 401 — garante funcionamento imediato após rotação do CA no Vault.
-  Nada em disco, nenhum Agent, nenhuma credencial estática.
+O CA cert é obtido diretamente do endpoint público do Vault PKI e mantido em
+cache em memória com TTL (MTLS_CA_TTL_SECONDS, default 3600). Se uma validação
+falhar, o cache é invalidado e o CA é renovado antes de retornar 401 — garante
+funcionamento imediato após rotação do CA no Vault.
 
-  Endpoint público (sem token):
-    GET /v1/pki/issuer/e9f0a792-2407-a20c-3399-c53b64ac1249/pem
-    Header: X-Vault-Namespace: admin/ibm
+Endpoint público (sem token):
+  GET /v1/pki/issuer/e9f0a792-2407-a20c-3399-c53b64ac1249/pem
+  Header: X-Vault-Namespace: admin/ibm
 
 Variáveis de ambiente:
   MTLS_CN_REQUIRED      → CN esperado no cert cliente

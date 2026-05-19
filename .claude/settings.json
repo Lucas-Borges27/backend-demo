@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm /Users/lucasborges/backend-demo/start.sh /Users/lucasborges/backend-demo/config.hcl /Users/lucasborges/backend-demo/extrato-api-key.tpl)",
+      "Bash(rm -rf /Users/lucasborges/backend-demo/vault-agent/)",
+      "Bash(rm /Users/lucasborges/backend-demo/routers/auth_router.py /Users/lucasborges/backend-demo/routers/kv_router.py /Users/lucasborges/backend-demo/routers/kvm_router.py /Users/lucasborges/backend-demo/routers/pki_router.py /Users/lucasborges/backend-demo/routers/transit_router.py && echo \"done\")",
+      "Bash(python -c \"from main import app; print\\('OK —', app.title\\)\")",
+      "Bash(python3 -c \"from main import app; print\\('OK —', app.title\\)\")",
+      "Bash(python3 -m venv /tmp/venv-demo)",
+      "Bash(/tmp/venv-demo/bin/pip install *)",
+      "Bash(/tmp/venv-demo/bin/python -c \"from main import app; print\\('OK —', app.title\\)\")",
+      "Read(//usr/local/bin/**)",
+      "Read(//opt/homebrew/bin/**)",
+      "Bash(command -v python3.12 python3.11 python3.10)"
+    ],
+    "additionalDirectories": [
+      "/Users/lucasborges/backend-demo/routers"
+    ]
+  }
+}
