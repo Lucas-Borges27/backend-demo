@@ -1,17 +1,19 @@
 """
 routers/extrato_router.py
 ──────────────────────────────────────────────────────────────────────────────
-CENÁRIO d — Credenciais de Target Server via Vault
+CENÁRIO d — Credenciais de Target Server via Vault (sem Agent)
 
-O Cloud Run autentica no Vault via JWT do metadata server GCP (sem SA key
-estática) e mantém a API key em cache em memória com TTL. Se a key for
-rejeitada, invalida o cache e busca novamente — garante funcionamento após
-rotação da key no Vault.
+Variação sem Vault Agent:
+  O Cloud Run autentica no Vault via JWT do metadata server GCP
+  (sem SA key estática) e mantém a API key em cache em memória com TTL.
+  Se a key recebida não bater com o cache, busca direto do Vault antes
+  de retornar 401 — garante funcionamento após rotação da key no Vault.
+  Nada em disco, nenhum Agent, nenhuma credencial estática.
 
-Fluxo:
-  GET metadata server (audience=https://vault.hashicorp.com) → oidc_token
-  POST /v1/auth/jwt/login {role, jwt} → client_token
-  GET /v1/kvapigee-demo/data/extrato-api-key → api_key
+  Fluxo:
+    GET metadata server (audience=https://vault.hashicorp.com) → oidc_token
+    POST /v1/auth/jwt/login {role, jwt} → client_token
+    GET /v1/kvapigee-demo/data/extrato-api-key → api_key
 
 Variáveis de ambiente:
   EXTRATO_API_KEY         → fallback dev local
@@ -113,10 +115,15 @@ def _load_api_key() -> str:
     return _key_cache["key"]
 
 
-def _invalidate_key_cache() -> None:
-    """Força renovação da key no próximo _load_api_key()."""
+def _force_refresh_key() -> str:
+    """
+    Busca a key diretamente do Vault ignorando o cache.
+    Usado quando a key recebida não bate com o cache — pode ter rotacionado.
+    """
     with _key_lock:
-        _key_cache["fetched_at"] = 0.0
+        _key_cache["key"]        = _fetch_key_from_vault()
+        _key_cache["fetched_at"] = time.monotonic()
+    return _key_cache["key"]
 
 
 # ── dados de extrato (seed para demo) ─────────────────────────────────────
@@ -160,23 +167,23 @@ async def get_extrato(
     cpf: str,
     x_api_key: Annotated[str | None, Header(alias="x-api-key")] = None,
 ):
+    if not x_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="x-api-key ausente",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+
     # fallback dev local
     expected_key = os.getenv("EXTRATO_API_KEY", "").strip() or _load_api_key()
 
-    if not expected_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Serviço indisponível — key não disponível",
-        )
-
-    if not x_api_key or x_api_key != expected_key:
-        # key pode ter rotacionado — invalida cache e retenta uma vez
-        _invalidate_key_cache()
-        expected_key = os.getenv("EXTRATO_API_KEY", "").strip() or _load_api_key()
-        if not x_api_key or x_api_key != expected_key:
+    if x_api_key != expected_key:
+        # key pode ter rotacionado — busca direto do Vault e retenta uma vez
+        expected_key = os.getenv("EXTRATO_API_KEY", "").strip() or _force_refresh_key()
+        if x_api_key != expected_key:
             raise HTTPException(
                 status_code=401,
-                detail="x-api-key ausente ou inválida",
+                detail="x-api-key inválida",
                 headers={"WWW-Authenticate": "ApiKey"},
             )
 
