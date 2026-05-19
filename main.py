@@ -11,9 +11,10 @@ from routers import faturas_router, faturas_seed, extrato_router, portabilidade_
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.resource_server_config = get_resource_server_config()
-    # warm-up do CA cert — falha rápido no startup se o Vault não estiver acessível
     from routers.portabilidade_router import _load_ca_cert
+    from routers.extrato_router import _load_api_key
     _load_ca_cert()
+    _load_api_key()
     yield
 
 
